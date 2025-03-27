@@ -1,7 +1,6 @@
 from typing import List, Literal
 from pathlib import Path
 from functools import partial
-import spaces
 import gradio as gr
 import numpy as np
 import torch
@@ -98,7 +97,6 @@ def get_duration_single_image_to_long_video(idx: int, guidance_scale: float, fps
     return 30 * fps
 
 
-@spaces.GPU(duration=get_duration_single_image_to_long_video)
 @torch.autocast("cuda")
 @torch.no_grad()
 def single_image_to_long_video(
@@ -121,7 +119,6 @@ def single_image_to_long_video(
     return export_to_video(gen_video[0].detach().cpu(), fps=fps)
 
 
-@spaces.GPU(duration=30)
 @torch.autocast("cuda")
 @torch.no_grad()
 def any_images_to_short_video(
@@ -185,7 +182,6 @@ def get_duration_navigate_video(video: torch.Tensor,
         return 45
     return 30
 
-@spaces.GPU(duration=45)
 @torch.autocast("cuda")
 @torch.no_grad()
 def navigate_video(
@@ -380,7 +376,6 @@ def get_duration_smooth_navigation(
     return 2 * length
 
 
-@spaces.GPU(duration=get_duration_smooth_navigation)
 @torch.autocast("cuda")
 @torch.no_grad()
 def smooth_navigation(
@@ -1049,4 +1044,5 @@ with gr.Blocks(theme=gr.themes.Base(primary_hue="teal")) as demo:
                 
 
 if __name__ == "__main__":
-    demo.launch()
+    # demo.launch()
+    demo.queue().launch(debug=True, share=False) 

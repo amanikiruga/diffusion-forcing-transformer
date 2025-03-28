@@ -1,11 +1,18 @@
 from typing import Dict, List
 from torch import nn, Tensor
-from torchmetrics.image.lpip import NoTrainLpips
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity as NoTrainLpips
+# from torchmetrics.image.fid import NoTrainInceptionV3
 from torchmetrics.image.fid import NoTrainInceptionV3
 from utils.torch_utils import freeze_model
 from utils.print_utils import suppress_warnings
 from .models import I3D, MotionExtractor, CLIP, DINO, LAION, MUSIQ, RAFT, AMT_S
 from .types import VideoMetricModelType, VideoMetricType
+
+# class NoTrainLpips(LearnedPerceptualImagePatchSimilarity):
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         for param in self.net.parameters():
+#             param.requires_grad = False
 
 
 class SharedVideoMetricModelRegistry(nn.ModuleDict):

@@ -1,3 +1,8 @@
+
+import sys 
+sys.path.append('..')
+
+
 from typing import List, Literal
 from pathlib import Path
 from functools import partial
@@ -100,23 +105,34 @@ def get_duration_single_image_to_long_video(idx: int, guidance_scale: float, fps
 @torch.autocast("cuda")
 @torch.no_grad()
 def single_image_to_long_video(
-    idx: int, guidance_scale: float, fps: int, progress=gr.Progress(track_tqdm=True)
+    uploaded_image: np.ndarray, guidance_scale: float, fps: int, progress=gr.Progress(track_tqdm=True)
 ):
-    video = video_list[idx]
-    poses = poses_list[idx]
+    video = video_list[0]
+    poses = poses_list[0]
     indices = torch.linspace(0, video.size(0) - 1, LONG_LENGTH * fps, dtype=torch.long)
-    xs = video[indices].unsqueeze(0).to("cuda")
+    # xs = video[indices].unsqueeze(0).to("cuda")
     conditions = poses[indices].unsqueeze(0).to("cuda")
+    
+    image = torch.from_numpy(uploaded_image).permute(2, 0, 1).float() / 255.0
+    print("video stats", video.shape, video.min(), video.max())
+    print("video indices stats", video[indices].shape, video[indices].min(), video[indices].max())
+    print("uploaded image stats", image.shape, image.min(), image.max())
+    
+    xs = image.unsqueeze(0).unsqueeze(0).repeat(1, LONG_LENGTH * fps, 1, 1, 1).to("cuda")
+
+    # Dummy zero poses
+    # conditions = torch.zeros((1, LONG_LENGTH * fps, 16), device="cuda")
+
+
     dfot.cfg.tasks.prediction.history_guidance.guidance_scale = guidance_scale
     dfot.cfg.tasks.prediction.keyframe_density = 12 / (fps * LONG_LENGTH)
-    # dfot.cfg.tasks.interpolation.history_guidance.guidance_scale = guidance_scale
+
     gen_video = dfot._unnormalize_x(
-        dfot._predict_videos(
-            dfot._normalize_x(xs),
-            conditions,
-        )
+        dfot._predict_videos(dfot._normalize_x(xs), conditions)
     )
     return export_to_video(gen_video[0].detach().cpu(), fps=fps)
+
+
 
 
 @torch.autocast("cuda")
@@ -403,87 +419,128 @@ def smooth_navigation(
         [(image, f"t={i}") for i, image in enumerate(images)],
     )
 
-def render_demo1(s: Literal["Selection", "Generation"], idx: int, demo1_stage: gr.State, demo1_selected_index: gr.State):
+# def render_demo1(s: Literal["Selection", "Generation"], idx: int, demo1_stage: gr.State, demo1_selected_index: gr.State):
+#     gr.Markdown(
+#         f"""
+#         ## Demo 1: Single Image → Long {LONG_LENGTH}-second Video
+#         > #### _Diffusion Forcing Transformer can generate long videos via sliding window rollouts and temporal super-resolution._
+#         """,
+#         elem_classes=["task-title"]
+#     )
+
+#     # 🔥 These must be declared before any usage
+#     input_image_display = gr.Image(label="Input Image", width=256, height=256)
+#     demo1_video = gr.Video(label="Generated Video", width=256, height=256, autoplay=True, loop=True)
+#     demo1_uploaded_image = gr.State()
+
+#     match s:
+#         case "Selection":
+#             with gr.Group():
+#                 uploaded = gr.Image(type="numpy", label="Upload an Image", height=300)
+
+#                 gr.Button("Use This Image", variant="primary").click(
+#                     fn=lambda img: ("Generation", img, img),
+#                     inputs=[uploaded],
+#                     outputs=[demo1_stage, demo1_uploaded_image, input_image_display],
+#                 )
+
+
+#                 def move_to_generation(selection: gr.SelectData):
+#                     return "Generation", selection.index
+
+#         case "Generation":
+#             with gr.Row():
+#                 input_image_display = gr.Image(
+#                     label="Input Image",
+#                     width=256,
+#                     height=256,
+#                 )
+#                 demo1_video = gr.Video(
+#                     label="Generated Video",
+#                     width=256,
+#                     height=256,
+#                     autoplay=True,
+#                     loop=True,
+#                 )
+
+#             uploaded = gr.Image(label="Upload Your Own Image", type="pil")
+#             gr.Button("Use This Image", variant="primary").click(
+#                 fn=lambda img: img,
+#                 inputs=uploaded,
+#                 outputs=demo1_uploaded_image,
+#             )
+
+#             demo1_uploaded_image = gr.State(value=None)
+
+#             use_button.click(
+#                 fn=lambda img: ("Generation", img, img),
+#                 inputs=[uploaded],
+#                 outputs=[demo1_stage, demo1_uploaded_image, input_image_display],
+#             )
+
+demo1_uploaded_image = gr.State(value=None)
+def render_demo1():
     gr.Markdown(
         f"""
-        ## Demo 1: Single Image → Long {LONG_LENGTH}-second Video
-        > #### _Diffusion Forcing Transformer can generate long videos via sliding window rollouts and temporal super-resolution._
-    """,
-    elem_classes=["task-title"]
+        ## Demo 1: Upload an Image → Generate a {LONG_LENGTH}-Second Video  
+        > _Diffusion Forcing Transformer generates long videos from a single image via sliding window rollouts and temporal super-resolution._
+        """,
+        elem_classes=["task-title"]
     )
-    match s:
-        case "Selection":
-            with gr.Group():
-                demo1_image_gallery = gr.Gallery(
-                    height=300,
-                    value=first_frame_list,
-                    label="Select an Image to Animate",
-                    columns=[8],
-                    selected_index=idx,
-                    allow_preview=False,
-                    preview=False,
-                )
 
-                @demo1_image_gallery.select(
-                    inputs=None, outputs=[demo1_stage, demo1_selected_index]
-                )
-                def move_to_generation(selection: gr.SelectData):
-                    return "Generation", selection.index
+    demo1_uploaded_image = gr.State()
 
-        case "Generation":
-            with gr.Row():
-                gr.Image(
-                    value=first_frame_list[idx],
-                    label="Input Image",
-                    width=256,
-                    height=256,
-                )
-                gr.Video(
-                    value=prepare_long_gt_video(idx),
-                    label="Ground Truth Video",
-                    width=256,
-                    height=256,
-                    autoplay=True,
-                    loop=True,
-                )
-                demo1_video = gr.Video(
-                    label="Generated Video",
-                    width=256,
-                    height=256,
-                    autoplay=True,
-                    loop=True,
-                    show_share_button=True,
-                    show_download_button=True,
-                )
+    with gr.Row():
+        uploaded = gr.Image(label="Upload an Image", type="numpy", height=256)
+        input_image_display = gr.Image(label="Input Image", height=256)
+        demo1_video = gr.Video(
+            label="Generated Video",
+            height=256,
+            autoplay=True,
+            loop=True,
+            show_share_button=True,
+            show_download_button=True,
+        )
 
-            gr.Markdown("### Generation Controls ↓")
-            demo1_guidance_scale = gr.Slider(
-                minimum=1,
-                maximum=6,
-                value=4,
-                step=0.5,
-                label="History Guidance Scale",
-                info="Without history guidance: 1.0; Recommended: 4.0",
-                interactive=True,
-            )
-            demo1_fps = gr.Slider(
-                minimum=4,
-                maximum=20,
-                value=4,
-                step=1,
-                label="FPS",
-                info=f"A {LONG_LENGTH}-second video will be generated at this FPS; Decrease for faster generation; Increase for a smoother video",
-                interactive=True,
-            )
-            gr.Button("Generate Video", variant="primary").click(
-                fn=single_image_to_long_video,
-                inputs=[
-                    demo1_selected_index,
-                    demo1_guidance_scale,
-                    demo1_fps,
-                ],
-                outputs=demo1_video,
-            )
+    gr.Markdown("### Generation Controls ↓")
+
+    demo1_guidance_scale = gr.Slider(
+        minimum=1,
+        maximum=6,
+        value=4,
+        step=0.5,
+        label="History Guidance Scale",
+        info="Without history guidance: 1.0; Recommended: 4.0",
+        interactive=True,
+    )
+
+    demo1_fps = gr.Slider(
+        minimum=4,
+        maximum=20,
+        value=4,
+        step=1,
+        label="FPS",
+        info=f"A {LONG_LENGTH}-second video will be generated at this FPS",
+        interactive=True,
+    )
+
+    use_button = gr.Button("Generate Video", variant="primary")
+
+    use_button.click(
+        fn=lambda img: (img, img),
+        inputs=[uploaded],
+        outputs=[demo1_uploaded_image, input_image_display],
+    ).then(
+        fn=single_image_to_long_video,
+        inputs=[
+            demo1_uploaded_image,
+            demo1_guidance_scale,
+            demo1_fps,
+        ],
+        outputs=demo1_video,
+    )
+
+
 
 def render_demo2(s: Literal["Scene", "Image", "Generation"], scene_idx: int, image_indices: List[int], demo2_stage: gr.State, demo2_selected_scene_index: gr.State, demo2_selected_image_indices: gr.State):
     gr.Markdown(
@@ -1019,8 +1076,9 @@ with gr.Blocks(theme=gr.themes.Base(primary_hue="teal")) as demo:
                     "Consider running the demo locally (click the dots in the top-right corner). Alternatively, you can subscribe to Hugging Face Pro for an increased GPU quota."
                 )
 
-    demo1_stage = gr.State(value="Selection")
+    demo1_stage = gr.State(value="Generation")
     demo1_selected_index = gr.State(value=None)
+    demo1_uploaded_image = gr.State(value=None)
     demo2_stage = gr.State(value="Scene")
     demo2_selected_scene_index = gr.State(value=None)
     demo2_selected_image_indices = gr.State(value=[])
@@ -1035,7 +1093,7 @@ with gr.Blocks(theme=gr.themes.Base(primary_hue="teal")) as demo:
     ):
         match _demo_idx:
             case 1:
-                render_demo1(_demo1_stage, _demo1_selected_index, demo1_stage, demo1_selected_index)
+                render_demo1()
             case 2:
                 render_demo2(_demo2_stage, _demo2_selected_scene_index, _demo2_selected_image_indices,
                     demo2_stage, demo2_selected_scene_index, demo2_selected_image_indices)

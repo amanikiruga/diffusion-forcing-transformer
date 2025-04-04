@@ -165,3 +165,6 @@ data
 
 # huggingface
 huggingface/
+
+**/*/res_no_commit
+
